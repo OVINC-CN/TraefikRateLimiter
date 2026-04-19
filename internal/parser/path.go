@@ -1,4 +1,4 @@
-package TraefikRateLimiter
+package parser
 
 import "strings"
 
@@ -9,9 +9,7 @@ const (
 	rulePathUUID  = ":uuid"
 )
 
-// normalizeRulePath converts dynamic path segments into stable placeholders
-// for keying, reducing Redis key cardinality under high traffic.
-func normalizeRulePath(path string) string {
+func ParsePath(path string) string {
 	if path == "" {
 		return path
 	}
