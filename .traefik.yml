@@ -1,10 +1,7 @@
 displayName: Traefik Rate Limiter
 type: middleware
 import: github.com/OVINC-CN/TraefikRateLimiter
-summary: URL-level rate limiting middleware with in-memory fixed-window counters.
-  Supports per-path rules (exact or prefix), method filters, configurable IP
-  strategy, time granularities of s/m/h/d and access-log friendly response
-  headers.
+summary: URL-level rate limiting middleware with in-memory fixed-window counters
 
 testData:
   ipStrategy:
