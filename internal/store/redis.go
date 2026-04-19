@@ -21,8 +21,6 @@ type RedisStore struct {
 
 	conn net.Conn
 	rd   *bufio.Reader
-
-	incrScriptSHA string
 }
 
 func (s *RedisStore) connect() error {
@@ -65,12 +63,6 @@ func (s *RedisStore) connect() error {
 		}
 	}
 
-	// load Lua script and cache its SHA1
-	if err = s.loadIncrScript(); err != nil {
-		s.resetConn()
-		return fmt.Errorf("redis: SCRIPT LOAD: %w", err)
-	}
-
 	return nil
 }
 
@@ -80,7 +72,6 @@ func (s *RedisStore) resetConn() {
 	}
 	s.conn = nil
 	s.rd = nil
-	s.incrScriptSHA = ""
 }
 
 func (s *RedisStore) send(args ...string) error {
@@ -169,26 +160,9 @@ func (s *RedisStore) readOne() (interface{}, error) {
 	}
 }
 
-func (s *RedisStore) loadIncrScript() error {
-	if err := s.send("SCRIPT", "LOAD", constant.IncrTTLScript); err != nil {
-		return err
-	}
-	resp, err := s.recv()
-	if err != nil {
-		return err
-	}
-	sha, ok := resp.(string)
-	if !ok || sha == "" {
-		return fmt.Errorf("redis: malformed SCRIPT LOAD result %v", resp)
-	}
-	s.incrScriptSHA = sha
-	return nil
-}
-
 func (s *RedisStore) evalIncr(key string, ttlSec int64) (int64, int64, error) {
 	// call lua script
-	ttlStr := strconv.FormatInt(ttlSec, 10)
-	if err := s.send("EVALSHA", s.incrScriptSHA, "1", key, ttlStr); err != nil {
+	if err := s.send("EVAL", constant.IncrTTLScript, "1", key, strconv.FormatInt(ttlSec, 10)); err != nil {
 		return 0, 0, err
 	}
 	// receive response
