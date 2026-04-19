@@ -1,4 +1,4 @@
-package traefikratelimiter
+package TraefikRateLimiter
 
 import (
 	"net/http/httptest"

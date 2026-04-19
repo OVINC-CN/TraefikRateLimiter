@@ -1,6 +1,6 @@
 // Package traefikratelimiter provides a URL-level, in-memory rate limiting
 // middleware for Traefik with access-log friendly response headers.
-package traefikratelimiter
+package TraefikRateLimiter
 
 import (
 	"fmt"
