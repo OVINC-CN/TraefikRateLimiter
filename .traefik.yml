@@ -1,13 +1,20 @@
 displayName: Traefik Rate Limiter
 type: middleware
 import: github.com/OVINC-CN/TraefikRateLimiter
-summary: URL-level rate limiting middleware with in-memory fixed-window counters
+summary: URL-level fixed-window rate limiting middleware backed by Redis
 
 testData:
+  addHeaders: true
   ipStrategy:
     header: "X-Forwarded-For"
     depth: 0
-    trustedHeaders: ["X-Forwarded-For", "X-Real-IP"]
+    trustedHeaders: ["X-Real-IP"]
+  redis:
+    addr: "127.0.0.1:6379"
+    password: ""
+    db: 0
+    keyPrefix: "rl:"
+    timeout: "1s"
   default:
     requests: 100
     period: "1m"
@@ -18,7 +25,8 @@ testData:
       methods: ["POST"]
       requests: 5
       period: "1m"
-    - path: "/api/"
+    - name: "api-prefix"
+      path: "/api/"
       matchType: "prefix"
       requests: 60
-      period: "1s"
+      period: "10s"
