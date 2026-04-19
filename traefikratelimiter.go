@@ -77,7 +77,7 @@ func New(ctx context.Context, next http.Handler, config *Config, name string) (h
 	}
 
 	var st rateStore
-	if config.Redis != nil && config.Redis.Addr != "" {
+	if config.Redis != nil {
 		rs, err := newRedisStore(*config.Redis)
 		if err != nil {
 			return nil, fmt.Errorf("redis store: %w", err)
@@ -87,6 +87,12 @@ func New(ctx context.Context, next http.Handler, config *Config, name string) (h
 		ms := newMemStore()
 		ms.startGC(ctx, gcInterval(rules, def))
 		st = ms
+	}
+	if cs, ok := st.(closeableStore); ok {
+		go func() {
+			<-ctx.Done()
+			_ = cs.Close()
+		}()
 	}
 
 	addHeaders := true
@@ -157,7 +163,13 @@ func (rl *RateLimiter) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 	// keyLabel is the human-readable portion of the key (without the window index).
 	keyLabel := fmt.Sprintf("%s|%s|%s", rule.id(), ip, req.URL.Path)
 
-	count, expireAt := rl.store.Incr(key, rule.period, now)
+	count, expireAt, err := rl.store.Incr(key, rule.period, now)
+	if err != nil {
+		rw.Header().Set("Content-Type", "application/json; charset=utf-8")
+		rw.WriteHeader(http.StatusInternalServerError)
+		_, _ = rw.Write([]byte(`{"error_code":"RATE_LIMIT_STORE_ERROR","error_msg":"限流存储异常，请稍后重试"}`))
+		return
+	}
 
 	remaining := rule.requests - count
 	if remaining < 0 {

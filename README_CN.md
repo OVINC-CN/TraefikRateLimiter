@@ -2,7 +2,7 @@
 
 # TraefikRateLimiter
 
-**Traefik URL 级别限流中间件，基于进程内固定窗口计数器。**
+**Traefik URL 级别限流中间件，基于固定窗口计数器（默认内存，可选 Redis）。**
 
 [![Go Version](https://img.shields.io/badge/go-1.24+-00ADD8?logo=go)](https://golang.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
@@ -15,9 +15,7 @@
 
 ## 简介
 
-TraefikRateLimiter 是一个 [Traefik](https://traefik.io/) 中间件插件，使用固定窗口算法 + 进程内内存存储实现 URL 级别限流。支持路径精确/前缀匹配、HTTP 方法过滤、自定义 IP 提取策略，并通过响应头暴露限流信息，方便 Traefik access log 直接采集。
-
-> **注意：** 计数器存储在内存中，每个 Traefik 实例独立计数。如需多副本精确限流，需使用共享存储（如 Redis）。
+TraefikRateLimiter 是一个 [Traefik](https://traefik.io/) 中间件插件，使用固定窗口算法实现 URL 级别限流。支持路径精确/前缀匹配、HTTP 方法过滤、自定义 IP 提取策略，并通过响应头暴露限流信息，方便 Traefik access log 直接采集。计数后端支持进程内内存（默认）和 Redis（可选）。
 
 ## 特性
 
@@ -27,6 +25,7 @@ TraefikRateLimiter 是一个 [Traefik](https://traefik.io/) 中间件插件，�
 - 🌐 **可配置 IP 来源** — 自定义 Header、depth 及备用 Header
 - 📊 **Access log 友好** — 通过响应头暴露 `Used`、`Remaining`、`RetryAfter`、`Key`
 - 🔋 **零外部依赖** — 仅标准库，完全兼容 Yaegi
+- 🧩 **可选 Redis 后端** — 多副本共享计数，支持分布式限流
 - 🗂️ **默认规则 + 多条路由规则** — 全局兜底与细粒度覆盖
 
 ## 安装
@@ -79,6 +78,11 @@ http:
           default:                      # 无规则命中时的兜底配置
             requests: 100
             period: "1m"
+          redis:                        # 可选：配置后启用 Redis 后端
+            addr: "127.0.0.1:6379"      # 可选，默认 127.0.0.1:6379
+            password: ""                # 可选
+            db: 0                       # 可选，默认 0
+            keyPrefix: "rl:"            # 可选
           rules:
             - name: "login"             # 可选，出现在 X-RateLimit-Key 中
               path: "/api/v1/login"
@@ -115,8 +119,19 @@ http:
 | `rules[].requests` | int | **必填** | 每窗口最大请求数 |
 | `rules[].period` | string | **必填** | 窗口长度（`s` / `m` / `h` / `d`） |
 | `addHeaders` | bool | `true` | 是否将 `X-RateLimit-*` 写入响应头 |
+| `redis.addr` | string | `127.0.0.1:6379` | Redis 地址（`host:port`） |
+| `redis.password` | string | `""` | Redis 密码 |
+| `redis.db` | int | `0` | Redis 逻辑库 |
+| `redis.keyPrefix` | string | `""` | Redis key 前缀 |
 
 `default` 与 `rules` 至少配置一个，否则 `New` 返回错误。
+
+### Redis 使用说明
+
+- 只要配置了 `redis` 对象即启用 Redis 后端；`redis.addr` 为空时默认 `127.0.0.1:6379`。
+- Redis 任意错误都会让当前请求返回 `500`。
+- Redis 网络错误时，客户端仍会为后续请求尝试自动重连。
+- 建议通过 `redis.keyPrefix` 隔离不同环境或业务的计数 key。
 
 ## 限流维度
 

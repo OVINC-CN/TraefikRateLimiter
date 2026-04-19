@@ -8,7 +8,11 @@ import (
 
 // rateStore is the backend interface used by the middleware to count requests.
 type rateStore interface {
-	Incr(key string, ttl time.Duration, now time.Time) (int64, time.Time)
+	Incr(key string, ttl time.Duration, now time.Time) (int64, time.Time, error)
+}
+
+type closeableStore interface {
+	Close() error
 }
 
 type counter struct {
@@ -34,7 +38,7 @@ func newMemStore() *memStore {
 // Incr increments the counter for key. If the key does not yet exist or has
 // expired, a new window is started with TTL=ttl. The current count and the
 // absolute expiration time are returned.
-func (s *memStore) Incr(key string, ttl time.Duration, now time.Time) (int64, time.Time) {
+func (s *memStore) Incr(key string, ttl time.Duration, now time.Time) (int64, time.Time, error) {
 	nowUnix := now.Unix()
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -47,10 +51,10 @@ func (s *memStore) Incr(key string, ttl time.Duration, now time.Time) (int64, ti
 		}
 		c = &counter{count: 1, expireUnix: nowUnix + ttlSec}
 		s.data[key] = c
-		return c.count, time.Unix(c.expireUnix, 0)
+		return c.count, time.Unix(c.expireUnix, 0), nil
 	}
 	c.count++
-	return c.count, time.Unix(c.expireUnix, 0)
+	return c.count, time.Unix(c.expireUnix, 0), nil
 }
 
 // gc removes expired entries.

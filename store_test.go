@@ -2,6 +2,7 @@ package TraefikRateLimiter
 
 import (
 	"context"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -15,17 +16,26 @@ func TestMemStoreFixedWindow(t *testing.T) {
 	s := newMemStore()
 	now := time.Unix(1000, 0)
 
-	c1, exp1 := s.Incr("k", 10*time.Second, now)
+	c1, exp1, err := s.Incr("k", 10*time.Second, now)
+	if err != nil {
+		t.Fatalf("first incr err=%v", err)
+	}
 	if c1 != 1 || exp1.Unix() != 1010 {
 		t.Fatalf("first incr: count=%d exp=%d", c1, exp1.Unix())
 	}
-	c2, exp2 := s.Incr("k", 10*time.Second, now.Add(time.Second))
+	c2, exp2, err := s.Incr("k", 10*time.Second, now.Add(time.Second))
+	if err != nil {
+		t.Fatalf("second incr err=%v", err)
+	}
 	if c2 != 2 || exp2.Unix() != 1010 {
 		t.Fatalf("second incr: count=%d exp=%d", c2, exp2.Unix())
 	}
 
 	// after expiry → fresh window
-	c3, exp3 := s.Incr("k", 10*time.Second, time.Unix(1011, 0))
+	c3, exp3, err := s.Incr("k", 10*time.Second, time.Unix(1011, 0))
+	if err != nil {
+		t.Fatalf("third incr err=%v", err)
+	}
 	if c3 != 1 || exp3.Unix() != 1021 {
 		t.Fatalf("after expiry: count=%d exp=%d", c3, exp3.Unix())
 	}
@@ -33,8 +43,12 @@ func TestMemStoreFixedWindow(t *testing.T) {
 
 func TestMemStoreGC(t *testing.T) {
 	s := newMemStore()
-	s.Incr("a", time.Second, time.Unix(1000, 0))
-	s.Incr("b", 10*time.Second, time.Unix(1000, 0))
+	if _, _, err := s.Incr("a", time.Second, time.Unix(1000, 0)); err != nil {
+		t.Fatalf("incr a: %v", err)
+	}
+	if _, _, err := s.Incr("b", 10*time.Second, time.Unix(1000, 0)); err != nil {
+		t.Fatalf("incr b: %v", err)
+	}
 	if s.size() != 2 {
 		t.Fatalf("size=%d", s.size())
 	}
@@ -53,11 +67,16 @@ func TestMemStoreConcurrent(t *testing.T) {
 	for i := 0; i < n; i++ {
 		go func() {
 			defer wg.Done()
-			s.Incr("shared", time.Minute, now)
+			if _, _, err := s.Incr("shared", time.Minute, now); err != nil {
+				t.Errorf("incr shared err=%v", err)
+			}
 		}()
 	}
 	wg.Wait()
-	c, _ := s.Incr("shared", time.Minute, now)
+	c, _, err := s.Incr("shared", time.Minute, now)
+	if err != nil {
+		t.Fatalf("incr shared final err=%v", err)
+	}
 	if c != int64(n+1) {
 		t.Fatalf("expected count=%d, got %d", n+1, c)
 	}
@@ -204,5 +223,42 @@ func TestMiddlewareAddHeadersFalse(t *testing.T) {
 		if v := rr.Header().Get(hdr); v != "" {
 			t.Errorf("addHeaders=false: unexpected header %s: %s", hdr, v)
 		}
+	}
+}
+
+type errStore struct{}
+
+func (errStore) Incr(string, time.Duration, time.Time) (int64, time.Time, error) {
+	return 0, time.Time{}, errors.New("boom")
+}
+
+func TestMiddlewareStoreErrorReturns500(t *testing.T) {
+	cfg := CreateConfig()
+	cfg.Default = LimitConfig{Requests: 10, Period: "1m"}
+	addHeaders := true
+
+	rl := &RateLimiter{
+		next:       http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { t.Fatal("next should not be called") }),
+		cfg:        cfg,
+		def:        &compiledRule{name: "default", matchType: MatchPrefix, path: "/", requests: 10, period: time.Minute, periodLabel: "1m"},
+		store:      errStore{},
+		addHeaders: addHeaders,
+		now:        func() time.Time { return time.Unix(1000, 0) },
+	}
+
+	req := httptest.NewRequest("GET", "/foo", nil)
+	req.Header.Set("X-Forwarded-For", "1.2.3.4")
+	rr := httptest.NewRecorder()
+	rl.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusInternalServerError {
+		t.Fatalf("code=%d want 500", rr.Code)
+	}
+	if ct := rr.Header().Get("Content-Type"); ct != "application/json; charset=utf-8" {
+		t.Fatalf("Content-Type=%q", ct)
+	}
+	body := rr.Body.String()
+	if !strings.Contains(body, `"error_code":"RATE_LIMIT_STORE_ERROR"`) {
+		t.Fatalf("unexpected body: %s", body)
 	}
 }

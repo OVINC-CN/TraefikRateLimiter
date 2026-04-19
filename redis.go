@@ -2,6 +2,7 @@ package TraefikRateLimiter
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -19,7 +20,7 @@ const incrTTLScript = `local c=redis.call('INCR',KEYS[1]) ` +
 
 // redisStore is a rate-limit counter backend backed by Redis.
 // A single TCP connection is kept open and protected by a mutex.
-// On any network error the store reconnects once before returning a fallback value.
+// On Redis errors, the current request fails and the error is returned.
 type redisStore struct {
 	mu       sync.Mutex
 	addr     string
@@ -48,12 +49,18 @@ func newRedisStore(cfg RedisConfig) (*redisStore, error) {
 	return s, nil
 }
 
-// connect establishes (or re-establishes) the TCP connection, runs AUTH and
-// SELECT when configured, and resets the read buffer.
-func (s *redisStore) connect() error {
+func (s *redisStore) resetConn() {
 	if s.conn != nil {
 		_ = s.conn.Close()
 	}
+	s.conn = nil
+	s.rd = nil
+}
+
+// connect establishes (or re-establishes) the TCP connection, runs AUTH and
+// SELECT when configured, and resets the read buffer.
+func (s *redisStore) connect() error {
+	s.resetConn()
 	conn, err := net.DialTimeout("tcp", s.addr, 5*time.Second)
 	if err != nil {
 		return fmt.Errorf("redis: dial %s: %w", s.addr, err)
@@ -63,22 +70,22 @@ func (s *redisStore) connect() error {
 
 	if s.password != "" {
 		if err := s.send("AUTH", s.password); err != nil {
-			_ = conn.Close()
+			s.resetConn()
 			return fmt.Errorf("redis: AUTH: %w", err)
 		}
 		if _, err := s.recv(); err != nil {
-			_ = conn.Close()
+			s.resetConn()
 			return fmt.Errorf("redis: AUTH response: %w", err)
 		}
 	}
 
 	if s.db != 0 {
 		if err := s.send("SELECT", strconv.Itoa(s.db)); err != nil {
-			_ = conn.Close()
+			s.resetConn()
 			return fmt.Errorf("redis: SELECT: %w", err)
 		}
 		if _, err := s.recv(); err != nil {
-			_ = conn.Close()
+			s.resetConn()
 			return fmt.Errorf("redis: SELECT response: %w", err)
 		}
 	}
@@ -88,6 +95,9 @@ func (s *redisStore) connect() error {
 
 // send serialises args as a RESP inline array and writes it to the connection.
 func (s *redisStore) send(args ...string) error {
+	if s.conn == nil {
+		return net.ErrClosed
+	}
 	var b strings.Builder
 	fmt.Fprintf(&b, "*%d\r\n", len(args))
 	for _, a := range args {
@@ -100,6 +110,9 @@ func (s *redisStore) send(args ...string) error {
 
 // recv reads one RESP value from the connection.
 func (s *redisStore) recv() (interface{}, error) {
+	if s.conn == nil || s.rd == nil {
+		return nil, net.ErrClosed
+	}
 	_ = s.conn.SetReadDeadline(time.Now().Add(3 * time.Second))
 	return s.readOne()
 }
@@ -192,9 +205,8 @@ func (s *redisStore) evalIncr(key string, ttlSec int64) (count int64, remainSec 
 }
 
 // Incr increments the counter for key in Redis and returns the current count
-// and the absolute expiration time. On network error the store attempts a
-// single reconnect; if that also fails the request is allowed through.
-func (s *redisStore) Incr(key string, ttl time.Duration, now time.Time) (int64, time.Time) {
+// and absolute expiration time.
+func (s *redisStore) Incr(key string, ttl time.Duration, now time.Time) (int64, time.Time, error) {
 	if s.prefix != "" {
 		key = s.prefix + key
 	}
@@ -208,16 +220,37 @@ func (s *redisStore) Incr(key string, ttl time.Duration, now time.Time) (int64, 
 
 	count, remainSec, err := s.evalIncr(key, ttlSec)
 	if err != nil {
-		// Attempt a single reconnect, then retry.
-		if err2 := s.connect(); err2 == nil {
-			count, remainSec, err = s.evalIncr(key, ttlSec)
+		if isNetworkError(err) {
+			// Reconnect for subsequent requests. Current request still fails.
+			_ = s.connect()
 		}
-		if err != nil {
-			// Fail open: allow the request through rather than blocking everyone.
-			return 1, now.Add(ttl)
-		}
+		return 0, time.Time{}, err
 	}
 
 	expireAt := now.Add(time.Duration(remainSec) * time.Second)
-	return count, expireAt
+	return count, expireAt, nil
+}
+
+// Close releases the underlying Redis connection.
+func (s *redisStore) Close() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.conn == nil {
+		return nil
+	}
+	err := s.conn.Close()
+	s.conn = nil
+	s.rd = nil
+	return err
+}
+
+func isNetworkError(err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, io.EOF) || errors.Is(err, net.ErrClosed) {
+		return true
+	}
+	var netErr net.Error
+	return errors.As(err, &netErr)
 }

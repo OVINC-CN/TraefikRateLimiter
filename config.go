@@ -75,8 +75,8 @@ type Config struct {
 	// AddHeaders controls whether rate-limit response headers are written.
 	// Defaults to true. Set to false to suppress all X-RateLimit-* headers.
 	AddHeaders *bool `json:"addHeaders,omitempty" yaml:"addHeaders,omitempty" toml:"addHeaders,omitempty"`
-	// Redis enables the Redis-backed counter store when Addr is set.
-	// When nil or Addr is empty, the in-process memory store is used.
+	// Redis enables the Redis-backed counter store when non-nil.
+	// When Addr is empty, "127.0.0.1:6379" is used.
 	Redis *RedisConfig `json:"redis,omitempty" yaml:"redis,omitempty" toml:"redis,omitempty"`
 }
 

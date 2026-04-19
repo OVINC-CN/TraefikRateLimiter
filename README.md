@@ -2,7 +2,7 @@
 
 # TraefikRateLimiter
 
-**URL-level rate limiting middleware for Traefik, backed by in-memory fixed-window counters.**
+**URL-level rate limiting middleware for Traefik, backed by fixed-window counters (memory by default, Redis optional).**
 
 [![Go Version](https://img.shields.io/badge/go-1.24+-00ADD8?logo=go)](https://golang.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
@@ -15,9 +15,7 @@
 
 ## Overview
 
-TraefikRateLimiter is a [Traefik](https://traefik.io/) middleware plugin that enforces URL-level rate limits using a fixed-window algorithm with in-process memory storage. It supports per-path rules (exact or prefix match), HTTP method filters, a configurable IP extraction strategy, and access-log friendly response headers.
-
-> **Note:** Because counters live in memory, each Traefik instance maintains independent state. For distributed rate limiting across multiple replicas, a shared backend (e.g. Redis) would be required.
+TraefikRateLimiter is a [Traefik](https://traefik.io/) middleware plugin that enforces URL-level rate limits using a fixed-window algorithm. It supports per-path rules (exact or prefix match), HTTP method filters, a configurable IP extraction strategy, and access-log friendly response headers. The counter backend can be in-memory (default) or Redis (optional).
 
 ## Features
 
@@ -27,6 +25,7 @@ TraefikRateLimiter is a [Traefik](https://traefik.io/) middleware plugin that en
 - 🌐 **Configurable IP strategy** – custom header, depth, and fallback headers
 - 📊 **Access-log friendly headers** – expose `Used`, `Remaining`, `RetryAfter`, and `Key`
 - 🔋 **Zero dependencies** – standard library only, fully Yaegi-compatible
+- 🧩 **Optional Redis backend** – shared counters across Traefik replicas
 - 🗂️ **Default + per-rule limits** – global fallback with fine-grained overrides
 
 ## Installation
@@ -79,6 +78,11 @@ http:
           default:                      # catch-all when no rule matches
             requests: 100
             period: "1m"
+          redis:                        # optional: enable Redis backend when present
+            addr: "127.0.0.1:6379"      # optional, default: 127.0.0.1:6379
+            password: ""                # optional
+            db: 0                       # optional, default: 0
+            keyPrefix: "rl:"            # optional
           rules:
             - name: "login"             # optional; used in X-RateLimit-Key
               path: "/api/v1/login"
@@ -115,8 +119,19 @@ http:
 | `rules[].requests` | int | **required** | Max requests allowed per window |
 | `rules[].period` | string | **required** | Window size (`s` / `m` / `h` / `d`) |
 | `addHeaders` | bool | `true` | Write `X-RateLimit-*` headers to the response |
+| `redis.addr` | string | `127.0.0.1:6379` | Redis server address (`host:port`) |
+| `redis.password` | string | `""` | Redis password |
+| `redis.db` | int | `0` | Redis logical DB index |
+| `redis.keyPrefix` | string | `""` | Prefix prepended to all Redis keys |
 
 At least one of `default` or `rules` must be configured; `New` returns an error otherwise.
+
+### Redis Backend Notes
+
+- Redis backend is enabled when the `redis` block is present. If `redis.addr` is empty, `127.0.0.1:6379` is used.
+- On any Redis error, middleware returns `500` for the current request.
+- On Redis network errors, the client still attempts reconnect for subsequent requests.
+- Use `redis.keyPrefix` to isolate keys between environments/services.
 
 ## Rate Limit Dimensions
 
@@ -211,4 +226,3 @@ go test ./...
 ## License
 
 MIT © [OVINC](https://github.com/OVINC-CN)
-
