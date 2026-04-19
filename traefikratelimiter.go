@@ -30,12 +30,13 @@ const HeaderKey = "X-RateLimit-Key"
 
 // RateLimiter is the Traefik middleware implementation.
 type RateLimiter struct {
-	next  http.Handler
-	name  string
-	cfg   *Config
-	rules []*compiledRule
-	def   *compiledRule
-	store *memStore
+	next       http.Handler
+	name       string
+	cfg        *Config
+	rules      []*compiledRule
+	def        *compiledRule
+	store      *memStore
+	addHeaders bool
 
 	now func() time.Time
 }
@@ -78,14 +79,20 @@ func New(ctx context.Context, next http.Handler, config *Config, name string) (h
 	store := newMemStore()
 	store.startGC(ctx, gcInterval(rules, def))
 
+	addHeaders := true
+	if config.AddHeaders != nil {
+		addHeaders = *config.AddHeaders
+	}
+
 	return &RateLimiter{
-		next:  next,
-		name:  name,
-		cfg:   config,
-		rules: rules,
-		def:   def,
-		store: store,
-		now:   time.Now,
+		next:       next,
+		name:       name,
+		cfg:        config,
+		rules:      rules,
+		def:        def,
+		store:      store,
+		addHeaders: addHeaders,
+		now:        time.Now,
 	}, nil
 }
 
@@ -151,12 +158,14 @@ func (rl *RateLimiter) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 		retryAfter = 0
 	}
 
-	rw.Header().Set(HeaderLimit, strconv.FormatInt(rule.requests, 10))
-	rw.Header().Set(HeaderUsed, fmt.Sprintf("%d/%s", count, rule.periodLabel))
-	rw.Header().Set(HeaderRemaining, fmt.Sprintf("%d/%s", remaining, rule.periodLabel))
-	rw.Header().Set(HeaderRetryAfter, fmt.Sprintf("%ds", retryAfter))
-	rw.Header().Set(HeaderReset, strconv.FormatInt(expireAt.Unix(), 10))
-	rw.Header().Set(HeaderKey, keyLabel)
+	if rl.addHeaders {
+		rw.Header().Set(HeaderLimit, strconv.FormatInt(rule.requests, 10))
+		rw.Header().Set(HeaderUsed, fmt.Sprintf("%d/%s", count, rule.periodLabel))
+		rw.Header().Set(HeaderRemaining, fmt.Sprintf("%d/%s", remaining, rule.periodLabel))
+		rw.Header().Set(HeaderRetryAfter, fmt.Sprintf("%ds", retryAfter))
+		rw.Header().Set(HeaderReset, strconv.FormatInt(expireAt.Unix(), 10))
+		rw.Header().Set(HeaderKey, keyLabel)
+	}
 
 	if count > rule.requests {
 		rw.Header().Set("Retry-After", strconv.FormatInt(retryAfter, 10))

@@ -130,7 +130,7 @@ func TestMiddlewareEnforcesLimit(t *testing.T) {
 
 func TestMiddlewareIndependentPathsForPrefixRule(t *testing.T) {
 	cfg := CreateConfig()
-	cfg.Rules = []RuleConfig{{Path: "/api/", MatchType: "prefix", LimitConfig: LimitConfig{Requests: 1, Period: "1m"}}}
+	cfg.Rules = []RuleConfig{{Path: "/api/", MatchType: "prefix", Requests: 1, Period: "1m"}}
 
 	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { _, _ = io.WriteString(w, "ok") })
 	h, err := New(context.Background(), next, cfg, "test")
@@ -159,7 +159,7 @@ func TestMiddlewareIndependentPathsForPrefixRule(t *testing.T) {
 
 func TestMiddlewareNoMatchPassesThrough(t *testing.T) {
 	cfg := CreateConfig()
-	cfg.Rules = []RuleConfig{{Path: "/api/", MatchType: "prefix", LimitConfig: LimitConfig{Requests: 1, Period: "1m"}}}
+	cfg.Rules = []RuleConfig{{Path: "/api/", MatchType: "prefix", Requests: 1, Period: "1m"}}
 
 	called := false
 	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { called = true })
@@ -182,5 +182,27 @@ func TestNewRequiresAnyLimit(t *testing.T) {
 	cfg := CreateConfig()
 	if _, err := New(context.Background(), http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}), cfg, "test"); err == nil {
 		t.Fatal("expected error when no rules and no default")
+	}
+}
+
+func TestMiddlewareAddHeadersFalse(t *testing.T) {
+	f := false
+	cfg := CreateConfig()
+	cfg.Default = LimitConfig{Requests: 10, Period: "1m"}
+	cfg.AddHeaders = &f
+
+	h, err := New(context.Background(), http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}), cfg, "test")
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	req := httptest.NewRequest("GET", "/foo", nil)
+	req.Header.Set("X-Forwarded-For", "1.2.3.4")
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+
+	for _, hdr := range []string{HeaderUsed, HeaderRemaining, HeaderRetryAfter, HeaderLimit, HeaderReset, HeaderKey} {
+		if v := rr.Header().Get(hdr); v != "" {
+			t.Errorf("addHeaders=false: unexpected header %s: %s", hdr, v)
+		}
 	}
 }

@@ -47,12 +47,12 @@ func TestCompileRulesValidation(t *testing.T) {
 		rules   []RuleConfig
 		wantErr bool
 	}{
-		{"empty path", []RuleConfig{{LimitConfig: LimitConfig{Requests: 1, Period: "1s"}}}, true},
-		{"zero requests", []RuleConfig{{Path: "/a", LimitConfig: LimitConfig{Requests: 0, Period: "1s"}}}, true},
-		{"bad period", []RuleConfig{{Path: "/a", LimitConfig: LimitConfig{Requests: 1, Period: "1x"}}}, true},
-		{"bad matchType", []RuleConfig{{Path: "/a", MatchType: "regex", LimitConfig: LimitConfig{Requests: 1, Period: "1s"}}}, true},
-		{"ok exact", []RuleConfig{{Path: "/a", MatchType: "exact", LimitConfig: LimitConfig{Requests: 1, Period: "1s"}}}, false},
-		{"ok prefix default matchType", []RuleConfig{{Path: "/a", LimitConfig: LimitConfig{Requests: 1, Period: "1s"}}}, false},
+		{"empty path", []RuleConfig{{Requests: 1, Period: "1s"}}, true},
+		{"zero requests", []RuleConfig{{Path: "/a", Requests: 0, Period: "1s"}}, true},
+		{"bad period", []RuleConfig{{Path: "/a", Requests: 1, Period: "1x"}}, true},
+		{"bad matchType", []RuleConfig{{Path: "/a", MatchType: "regex", Requests: 1, Period: "1s"}}, true},
+		{"ok exact", []RuleConfig{{Path: "/a", MatchType: "exact", Requests: 1, Period: "1s"}}, false},
+		{"ok prefix default matchType", []RuleConfig{{Path: "/a", Requests: 1, Period: "1s"}}, false},
 	}
 	for _, c := range cases {
 		_, err := compileRules(c.rules)

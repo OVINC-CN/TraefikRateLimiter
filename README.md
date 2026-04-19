@@ -114,6 +114,7 @@ http:
 | `rules[].methods` | []string | all | HTTP methods to apply the rule to |
 | `rules[].requests` | int | **required** | Max requests allowed per window |
 | `rules[].period` | string | **required** | Window size (`s` / `m` / `h` / `d`) |
+| `addHeaders` | bool | `true` | Write `X-RateLimit-*` headers to the response |
 
 At least one of `default` or `rules` must be configured; `New` returns an error otherwise.
 

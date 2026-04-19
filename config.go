@@ -57,6 +57,9 @@ type Config struct {
 	IPStrategy IPStrategyConfig `json:"ipStrategy,omitempty" yaml:"ipStrategy,omitempty" toml:"ipStrategy,omitempty"`
 	Default    LimitConfig      `json:"default,omitempty"    yaml:"default,omitempty"    toml:"default,omitempty"`
 	Rules      []RuleConfig     `json:"rules,omitempty"      yaml:"rules,omitempty"      toml:"rules,omitempty"`
+	// AddHeaders controls whether rate-limit response headers are written.
+	// Defaults to true. Set to false to suppress all X-RateLimit-* headers.
+	AddHeaders *bool `json:"addHeaders,omitempty" yaml:"addHeaders,omitempty" toml:"addHeaders,omitempty"`
 }
 
 // CreateConfig returns a Config populated with sensible defaults.

@@ -114,6 +114,7 @@ http:
 | `rules[].methods` | []string | 全部 | 限定 HTTP 方法 |
 | `rules[].requests` | int | **必填** | 每窗口最大请求数 |
 | `rules[].period` | string | **必填** | 窗口长度（`s` / `m` / `h` / `d`） |
+| `addHeaders` | bool | `true` | 是否将 `X-RateLimit-*` 写入响应头 |
 
 `default` 与 `rules` 至少配置一个，否则 `New` 返回错误。
 

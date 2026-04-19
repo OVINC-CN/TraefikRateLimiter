@@ -7,8 +7,8 @@ import (
 
 func TestCompiledRuleMatches(t *testing.T) {
 	rules, err := compileRules([]RuleConfig{
-		{Path: "/api/v1/login", MatchType: "exact", Methods: []string{"POST"}, LimitConfig: LimitConfig{Requests: 5, Period: "1m"}},
-		{Path: "/api/", MatchType: "prefix", LimitConfig: LimitConfig{Requests: 10, Period: "1s"}},
+		{Path: "/api/v1/login", MatchType: "exact", Methods: []string{"POST"}, Requests: 5, Period: "1m"},
+		{Path: "/api/", MatchType: "prefix", Requests: 10, Period: "1s"},
 	})
 	if err != nil {
 		t.Fatalf("compileRules: %v", err)
