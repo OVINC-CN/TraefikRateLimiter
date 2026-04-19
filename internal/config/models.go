@@ -75,7 +75,6 @@ type LimitConfig struct {
 }
 
 type RuleConfig struct {
-	LimitConfig
 	Name         string          `json:"name,omitempty"      yaml:"name,omitempty"      toml:"name,omitempty"`
 	Methods      []string        `json:"methods,omitempty"   yaml:"methods,omitempty"   toml:"methods,omitempty"`
 	MethodsInner map[string]bool `json:"-" yaml:"-" toml:"-"`
