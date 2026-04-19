@@ -52,6 +52,21 @@ type RuleConfig struct {
 	Methods   []string `json:"methods,omitempty"   yaml:"methods,omitempty"   toml:"methods,omitempty"`
 }
 
+// RedisConfig holds connection settings for the optional Redis-backed store.
+// When Addr is non-empty, the middleware uses Redis instead of the in-process
+// memory store, which allows rate-limit state to be shared across multiple
+// Traefik replicas.
+type RedisConfig struct {
+	// Addr is the Redis server address in "host:port" form (default "127.0.0.1:6379").
+	Addr string `json:"addr,omitempty" yaml:"addr,omitempty" toml:"addr,omitempty"`
+	// Password is sent via AUTH. Leave empty when Redis has no password.
+	Password string `json:"password,omitempty" yaml:"password,omitempty" toml:"password,omitempty"`
+	// DB selects the logical database (default 0).
+	DB int `json:"db,omitempty" yaml:"db,omitempty" toml:"db,omitempty"`
+	// KeyPrefix is prepended to every Redis key (e.g. "rl:").
+	KeyPrefix string `json:"keyPrefix,omitempty" yaml:"keyPrefix,omitempty" toml:"keyPrefix,omitempty"`
+}
+
 // Config is the root configuration consumed by the plugin.
 type Config struct {
 	IPStrategy IPStrategyConfig `json:"ipStrategy,omitempty" yaml:"ipStrategy,omitempty" toml:"ipStrategy,omitempty"`
@@ -60,6 +75,9 @@ type Config struct {
 	// AddHeaders controls whether rate-limit response headers are written.
 	// Defaults to true. Set to false to suppress all X-RateLimit-* headers.
 	AddHeaders *bool `json:"addHeaders,omitempty" yaml:"addHeaders,omitempty" toml:"addHeaders,omitempty"`
+	// Redis enables the Redis-backed counter store when Addr is set.
+	// When nil or Addr is empty, the in-process memory store is used.
+	Redis *RedisConfig `json:"redis,omitempty" yaml:"redis,omitempty" toml:"redis,omitempty"`
 }
 
 // CreateConfig returns a Config populated with sensible defaults.

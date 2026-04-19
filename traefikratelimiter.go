@@ -35,7 +35,7 @@ type RateLimiter struct {
 	cfg        *Config
 	rules      []*compiledRule
 	def        *compiledRule
-	store      *memStore
+	store      rateStore
 	addHeaders bool
 
 	now func() time.Time
@@ -76,8 +76,18 @@ func New(ctx context.Context, next http.Handler, config *Config, name string) (h
 		return nil, fmt.Errorf("no default limit and no rules configured")
 	}
 
-	store := newMemStore()
-	store.startGC(ctx, gcInterval(rules, def))
+	var st rateStore
+	if config.Redis != nil && config.Redis.Addr != "" {
+		rs, err := newRedisStore(*config.Redis)
+		if err != nil {
+			return nil, fmt.Errorf("redis store: %w", err)
+		}
+		st = rs
+	} else {
+		ms := newMemStore()
+		ms.startGC(ctx, gcInterval(rules, def))
+		st = ms
+	}
 
 	addHeaders := true
 	if config.AddHeaders != nil {
@@ -90,7 +100,7 @@ func New(ctx context.Context, next http.Handler, config *Config, name string) (h
 		cfg:        config,
 		rules:      rules,
 		def:        def,
-		store:      store,
+		store:      st,
 		addHeaders: addHeaders,
 		now:        time.Now,
 	}, nil

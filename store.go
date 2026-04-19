@@ -6,6 +6,11 @@ import (
 	"time"
 )
 
+// rateStore is the backend interface used by the middleware to count requests.
+type rateStore interface {
+	Incr(key string, ttl time.Duration, now time.Time) (int64, time.Time)
+}
+
 type counter struct {
 	count      int64
 	expireUnix int64
