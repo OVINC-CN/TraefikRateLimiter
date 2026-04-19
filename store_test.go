@@ -112,6 +112,13 @@ func TestMiddlewareEnforcesLimit(t *testing.T) {
 	if r3.Header().Get("Retry-After") == "" {
 		t.Errorf("r3 missing Retry-After")
 	}
+	if ct := r3.Header().Get("Content-Type"); ct != "application/json; charset=utf-8" {
+		t.Errorf("r3 Content-Type=%q", ct)
+	}
+	body := r3.Body.String()
+	if !strings.Contains(body, `"error_code":"RATE_LIMITED"`) {
+		t.Errorf("r3 body missing error_code: %s", body)
+	}
 	if r3.Header().Get(HeaderUsed) != "3/1h" {
 		t.Errorf("r3 Used=%q", r3.Header().Get(HeaderUsed))
 	}

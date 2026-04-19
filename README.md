@@ -1,65 +1,89 @@
+<div align="center">
+
 # TraefikRateLimiter
 
-URL 级别的 Traefik 限流中间件插件,使用进程内内存存储(固定窗口算法),并把限流计数信息写入响应头,便于 Traefik access log 直接采集。
+**URL-level rate limiting middleware for Traefik, backed by in-memory fixed-window counters.**
 
-## 特性
+[![Go Version](https://img.shields.io/badge/go-1.24+-00ADD8?logo=go)](https://golang.org/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-- ✅ URL 级别限流(支持 `exact` / `prefix` 路径匹配)
-- ✅ HTTP `methods` 条件过滤
-- ✅ 限流粒度:`s` / `m` / `h` / `d`(例如 `10s`、`5m`、`2h`、`1d`)
-- ✅ 全局 `default` 兜底 + 多条 `rules` 按顺序匹配
-- ✅ 自定义 IP 来源(默认 `X-Forwarded-For`,可换 `X-Real-IP`、`CF-Connecting-IP` 等)
-- ✅ 支持 `depth`(从右往左数第 N 个)+ `trustedHeaders` 备用列表
-- ✅ 把 `Used` / `Remaining` / `RetryAfter` 写到响应头,Traefik access log 一键开启
-- ✅ 零第三方依赖,Yaegi 兼容
+[English](README.md) · [中文](README_CN.md)
 
-## 安装
+</div>
 
-### Local Plugin (推荐)
+---
 
-将本仓库放到 Traefik 的插件目录:`/plugins-local/src/github.com/OVINC/TraefikRateLimiter`,然后在 Traefik 静态配置中声明:
+## Overview
+
+TraefikRateLimiter is a [Traefik](https://traefik.io/) middleware plugin that enforces URL-level rate limits using a fixed-window algorithm with in-process memory storage. It supports per-path rules (exact or prefix match), HTTP method filters, a configurable IP extraction strategy, and access-log friendly response headers.
+
+> **Note:** Because counters live in memory, each Traefik instance maintains independent state. For distributed rate limiting across multiple replicas, a shared backend (e.g. Redis) would be required.
+
+## Features
+
+- 🚦 **URL-level rate limiting** – exact or prefix path matching
+- 🔧 **Method filtering** – apply rules only to specific HTTP methods
+- ⏱️ **Flexible time windows** – `s`, `m`, `h`, `d` (e.g. `10s`, `5m`, `2h`, `1d`)
+- 🌐 **Configurable IP strategy** – custom header, depth, and fallback headers
+- 📊 **Access-log friendly headers** – expose `Used`, `Remaining`, `RetryAfter`, and `Key`
+- 🔋 **Zero dependencies** – standard library only, fully Yaegi-compatible
+- 🗂️ **Default + per-rule limits** – global fallback with fine-grained overrides
+
+## Installation
+
+### Option A — Local Plugin
+
+Copy (or symlink) this repository into Traefik's local plugin directory:
+
+```
+/plugins-local/src/github.com/OVINC-CN/TraefikRateLimiter/
+```
+
+Then register it in your **static** Traefik configuration:
 
 ```yaml
+# traefik.yml (static config)
 experimental:
   localPlugins:
     traefikratelimiter:
-      moduleName: github.com/OVINC/TraefikRateLimiter
+      moduleName: github.com/OVINC-CN/TraefikRateLimiter
 ```
 
-### Plugin Catalog
+### Option B — Plugin Catalog
 
 ```yaml
+# traefik.yml (static config)
 experimental:
   plugins:
     traefikratelimiter:
-      moduleName: github.com/OVINC/TraefikRateLimiter
+      moduleName: github.com/OVINC-CN/TraefikRateLimiter
       version: v0.1.0
 ```
 
-## 配置
+## Configuration
 
-### 完整示例(动态配置)
+### Full Example
 
 ```yaml
+# dynamic config
 http:
   middlewares:
     my-ratelimit:
       plugin:
         traefikratelimiter:
           ipStrategy:
-            header: "X-Forwarded-For"      # 可选,默认 X-Forwarded-For
-            depth: 0                        # 0 取最左侧;>0 从右往左数第 N 个
-            trustedHeaders:                 # 可选,备用候选 header
+            header: "X-Forwarded-For"   # primary IP header (default)
+            depth: 0                    # 0 = left-most; >0 = N-th from right
+            trustedHeaders:             # fallback headers, tried in order
               - "X-Real-IP"
-              - "CF-Connecting-IP"
-          default:                          # 可选,所有未匹配规则的请求走这里
+          default:                      # catch-all when no rule matches
             requests: 100
             period: "1m"
           rules:
-            - name: "login"                 # 可选,出现在内部 key 中便于排查
+            - name: "login"             # optional; used in X-RateLimit-Key
               path: "/api/v1/login"
-              matchType: "exact"            # exact | prefix,默认 exact
-              methods: ["POST"]             # 可选,大小写不敏感
+              matchType: "exact"        # exact | prefix  (default: exact)
+              methods: ["POST"]         # omit to match all methods
               requests: 5
               period: "1m"
             - path: "/api/"
@@ -75,49 +99,63 @@ http:
         - my-ratelimit
 ```
 
-### 字段说明
+### Configuration Reference
 
-| 字段 | 含义 | 默认 |
-| --- | --- | --- |
-| `ipStrategy.header` | 主 IP header | `X-Forwarded-For` |
-| `ipStrategy.depth` | 0 取最左,>0 从右往左 | `0` |
-| `ipStrategy.trustedHeaders` | 备用 header 列表(主 header 命中即用) | `[]` |
-| `default.requests` | 默认窗口允许请求数 | 无,可不配 |
-| `default.period` | 默认窗口长度 | 无,可不配 |
-| `rules[].path` | 规则路径 | 必填 |
-| `rules[].matchType` | `exact` / `prefix` | `exact` |
-| `rules[].methods` | 限定 HTTP 方法 | 不限 |
-| `rules[].requests` | 窗口允许请求数 | 必填,>0 |
-| `rules[].period` | 窗口长度,支持 `s`/`m`/`h`/`d` | 必填 |
-| `rules[].name` | 规则名,用于内部 key | `r{index}` |
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `ipStrategy.header` | string | `X-Forwarded-For` | Primary header to read the client IP from |
+| `ipStrategy.depth` | int | `0` | `0` = left-most entry; `>0` = N-th from right |
+| `ipStrategy.trustedHeaders` | []string | `[]` | Fallback headers tried after the primary one |
+| `default.requests` | int | — | Max requests per window for unmatched routes |
+| `default.period` | string | — | Window size for the default limit |
+| `rules[].name` | string | `r{index}` | Optional label (appears in `X-RateLimit-Key`) |
+| `rules[].path` | string | **required** | Path to match |
+| `rules[].matchType` | string | `exact` | `exact` or `prefix` |
+| `rules[].methods` | []string | all | HTTP methods to apply the rule to |
+| `rules[].requests` | int | **required** | Max requests allowed per window |
+| `rules[].period` | string | **required** | Window size (`s` / `m` / `h` / `d`) |
 
-> `default` 与 `rules` 至少配置一个;否则 `New` 会返回错误。
+At least one of `default` or `rules` must be configured; `New` returns an error otherwise.
 
-### 限流维度
+## Rate Limit Dimensions
 
-内部 key 格式:`{ruleID}|{ip}|{realPath}|{windowIndex}`。
+The internal counter key is:
 
-这意味着对于一条 `prefix` 规则(例如 `/api/`),`/api/a` 与 `/api/b` 是**两个独立的计数器**——这是有意为之,符合 URL 级别限流的预期。
+```
+{ruleID} | {ip} | {realPath} | {windowIndex}
+```
 
-## Access log 集成
+For a prefix rule on `/api/`, the paths `/api/a` and `/api/b` maintain **separate counters** — this is intentional and matches the expectation of URL-level rate limiting.
 
-中间件总会写入下面这些响应头:
+## Response Headers
 
-| Header | 示例 | 说明 |
-| --- | --- | --- |
-| `X-RateLimit-Limit` | `60` | 当前窗口允许的总请求数 |
-| `X-RateLimit-Key` | `login\|10.0.0.1\|/api/v1/login` | 限流维度标识:`{ruleID}\|{ip}\|{realPath}` |
-| `X-RateLimit-Used` | `1/1h` | 当前窗口已用请求数 / 周期 |
-| `X-RateLimit-Remaining` | `59/1h` | 剩余请求数 / 周期 |
-| `X-RateLimit-RetryAfter` | `0s` | 距离窗口重置剩余秒数(带 `s` 单位) |
-| `X-RateLimit-Reset` | `1713512345` | 窗口重置的 unix 时间戳 |
+These headers are set on **every matched request**, whether allowed or rejected:
 
-被限流时额外返回:
+| Header | Example | Description |
+|---|---|---|
+| `X-RateLimit-Limit` | `60` | Maximum requests configured for the window |
+| `X-RateLimit-Key` | `login\|10.0.0.1\|/api/v1/login` | Rate-limit dimension identifier |
+| `X-RateLimit-Used` | `1/1h` | Requests used in this window / period |
+| `X-RateLimit-Remaining` | `59/1h` | Remaining requests / period |
+| `X-RateLimit-RetryAfter` | `0s` | Seconds until the window resets (with `s` suffix) |
+| `X-RateLimit-Reset` | `1713512345` | Window reset time as a Unix timestamp |
 
-- HTTP 状态:`429 Too Many Requests`
-- `Retry-After: <秒数>`(整数,符合 HTTP 语义)
+### Rate-Limited Response (`429`)
 
-要让这些字段出现在 Traefik 的 access log 中,在 **静态配置** 里启用 `accessLog.fields.headers`:
+```json
+HTTP/1.1 429 Too Many Requests
+Content-Type: application/json; charset=utf-8
+Retry-After: 42
+X-RateLimit-Used: 6/1m
+X-RateLimit-Remaining: 0/1m
+X-RateLimit-RetryAfter: 42s
+
+{"error_code":"RATE_LIMITED","error_msg":"请求过于频繁，请 42 秒后重试"}
+```
+
+## Access Log Integration
+
+To surface rate-limit headers in Traefik's access log, add the following to your **static** configuration:
 
 ```yaml
 accessLog:
@@ -127,38 +165,49 @@ accessLog:
     headers:
       defaultMode: drop
       names:
+        X-RateLimit-Key: keep
         X-RateLimit-Used: keep
         X-RateLimit-Remaining: keep
         X-RateLimit-RetryAfter: keep
 ```
 
-日志中即会出现类似字段:
+Example log entry:
 
 ```json
 {
-  "...": "...",
-  "request_X-RateLimit-Used": "1/1h",
-  "request_X-RateLimit-Remaining": "59/1h",
-  "request_X-RateLimit-RetryAfter": "0s"
+  "RequestPath": "/api/v1/login",
+  "DownstreamStatus": 429,
+  "request_X-RateLimit-Key": "login|10.0.0.1|/api/v1/login",
+  "request_X-RateLimit-Used": "6/1m",
+  "request_X-RateLimit-Remaining": "0/1m",
+  "request_X-RateLimit-RetryAfter": "42s"
 }
 ```
 
-> Traefik 的 `accessLog.fields.headers` 实际记录的是**响应头**(向客户端返回的),字段名前缀视 Traefik 版本可能为 `request_` 或 `downstream_`,以你环境的实际输出为准。
+> The exact header field prefix (`request_` vs `downstream_`) depends on your Traefik version and configuration. Check your environment's actual output.
 
-## 已知局限
+## Known Limitations
 
-- **单进程内存存储**:计数仅在一个 Traefik 实例内有效。多实例部署(滚动升级、HA)时,每个实例独立计数,实际允许的总流量是单实例阈值 × 实例数。如果你需要分布式精确限流,请使用 Traefik 自带的官方限流插件或自行扩展存储后端。
-- **固定窗口**:窗口边界处可能出现「翻倍」毛刺(经典固定窗口问题)。对绝对平滑限流敏感的场景建议改用滑动窗口或令牌桶算法。
-- **进程重启会清空计数**。
+| Limitation | Detail |
+|---|---|
+| **Single-process only** | Counters are in-memory and not shared across Traefik replicas. |
+| **Fixed-window bursting** | Classic "double-hit" at window boundaries is possible. |
+| **No persistence** | Counters reset on process restart. |
 
-## 开发
+## Development
 
 ```bash
+# Lint & vet
 go vet ./...
+
+# Build
 go build ./...
+
+# Test
 go test ./...
 ```
 
 ## License
 
-MIT
+MIT © [OVINC](https://github.com/OVINC-CN)
+

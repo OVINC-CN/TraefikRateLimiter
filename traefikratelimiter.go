@@ -90,13 +90,13 @@ func New(ctx context.Context, next http.Handler, config *Config, name string) (h
 }
 
 func gcInterval(rules []*compiledRule, def *compiledRule) time.Duration {
-	min := time.Duration(0)
+	duration := time.Duration(0)
 	consider := func(d time.Duration) {
 		if d <= 0 {
 			return
 		}
-		if min == 0 || d < min {
-			min = d
+		if duration == 0 || d < duration {
+			duration = d
 		}
 	}
 	for _, r := range rules {
@@ -105,10 +105,10 @@ func gcInterval(rules []*compiledRule, def *compiledRule) time.Duration {
 	if def != nil {
 		consider(def.period)
 	}
-	if min == 0 {
+	if duration == 0 {
 		return time.Minute
 	}
-	half := min / 2
+	half := duration / 2
 	if half < time.Second {
 		return time.Second
 	}
@@ -160,7 +160,10 @@ func (rl *RateLimiter) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 
 	if count > rule.requests {
 		rw.Header().Set("Retry-After", strconv.FormatInt(retryAfter, 10))
-		http.Error(rw, "too many requests", http.StatusTooManyRequests)
+		rw.Header().Set("Content-Type", "application/json; charset=utf-8")
+		rw.WriteHeader(http.StatusTooManyRequests)
+		body := fmt.Sprintf(`{"error_code":"RATE_LIMITED","error_msg":"请求过于频繁，请 %d 秒后重试"}`, retryAfter)
+		_, _ = rw.Write([]byte(body))
 		return
 	}
 
