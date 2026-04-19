@@ -131,6 +131,7 @@ At least one of `default` or `rules` must be configured; `New` returns an error 
 - Redis backend is enabled when the `redis` block is present. If `redis.addr` is empty, `127.0.0.1:6379` is used.
 - On any Redis error, middleware returns `500` for the current request.
 - On Redis network errors, the client still attempts reconnect for subsequent requests.
+- Redis counter updates use `EVALSHA`; when Redis returns `NOSCRIPT`, the middleware reloads the script and retries once.
 - Use `redis.keyPrefix` to isolate keys between environments/services.
 
 ## Rate Limit Dimensions
@@ -138,10 +139,16 @@ At least one of `default` or `rules` must be configured; `New` returns an error 
 The internal counter key is:
 
 ```
-{ruleID} | {ip} | {realPath} | {windowIndex}
+{ruleID} | {ip} | {rulePath} | {windowIndex}
 ```
 
-For a prefix rule on `/api/`, the paths `/api/a` and `/api/b` maintain **separate counters** — this is intentional and matches the expectation of URL-level rate limiting.
+`rulePath` is auto-normalized to reduce key cardinality, for example:
+
+- `/orders/123` and `/orders/456` → `/orders/:int`
+- `/trace/550e8400-e29b-41d4-a716-446655440000` → `/trace/:uuid`
+- `/token/<64-hex>` → `/token/:hex64`
+
+For static paths like `/api/a` and `/api/b`, counters remain independent.
 
 ## Response Headers
 
@@ -150,7 +157,7 @@ These headers are set on **every matched request**, whether allowed or rejected:
 | Header | Example | Description |
 |---|---|---|
 | `X-RateLimit-Limit` | `60` | Maximum requests configured for the window |
-| `X-RateLimit-Key` | `login\|10.0.0.1\|/api/v1/login` | Rate-limit dimension identifier |
+| `X-RateLimit-Key` | `default\|10.0.0.1\|/orders/:int` | Rate-limit dimension identifier |
 | `X-RateLimit-Used` | `1/1h` | Requests used in this window / period |
 | `X-RateLimit-Remaining` | `59/1h` | Remaining requests / period |
 | `X-RateLimit-RetryAfter` | `0s` | Seconds until the window resets (with `s` suffix) |

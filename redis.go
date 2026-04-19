@@ -28,8 +28,9 @@ type redisStore struct {
 	db       int
 	prefix   string
 
-	conn net.Conn
-	rd   *bufio.Reader
+	conn          net.Conn
+	rd            *bufio.Reader
+	incrScriptSHA string
 }
 
 func newRedisStore(cfg RedisConfig) (*redisStore, error) {
@@ -55,6 +56,7 @@ func (s *redisStore) resetConn() {
 	}
 	s.conn = nil
 	s.rd = nil
+	s.incrScriptSHA = ""
 }
 
 // connect establishes (or re-establishes) the TCP connection, runs AUTH and
@@ -89,7 +91,27 @@ func (s *redisStore) connect() error {
 			return fmt.Errorf("redis: SELECT response: %w", err)
 		}
 	}
+	if err := s.loadIncrScript(); err != nil {
+		s.resetConn()
+		return fmt.Errorf("redis: SCRIPT LOAD: %w", err)
+	}
 
+	return nil
+}
+
+func (s *redisStore) loadIncrScript() error {
+	if err := s.send("SCRIPT", "LOAD", incrTTLScript); err != nil {
+		return err
+	}
+	resp, err := s.recv()
+	if err != nil {
+		return err
+	}
+	sha, ok := resp.(string)
+	if !ok || sha == "" {
+		return fmt.Errorf("redis: malformed SCRIPT LOAD result %v", resp)
+	}
+	s.incrScriptSHA = sha
 	return nil
 }
 
@@ -173,19 +195,36 @@ func (s *redisStore) readOne() (interface{}, error) {
 	}
 }
 
-// evalIncr runs incrTTLScript via EVAL and returns (count, remaining_ttl).
+// evalIncr runs incrTTLScript via EVALSHA and returns (count, remaining_ttl).
 func (s *redisStore) evalIncr(key string, ttlSec int64) (count int64, remainSec int64, err error) {
 	ttlStr := strconv.FormatInt(ttlSec, 10)
-	if err = s.send("EVAL", incrTTLScript, "1", key, ttlStr); err != nil {
+	if s.incrScriptSHA == "" {
+		if err = s.loadIncrScript(); err != nil {
+			return
+		}
+	}
+	if err = s.send("EVALSHA", s.incrScriptSHA, "1", key, ttlStr); err != nil {
 		return
 	}
 	resp, err := s.recv()
 	if err != nil {
-		return
+		if !isNoScriptError(err) {
+			return
+		}
+		if err = s.loadIncrScript(); err != nil {
+			return
+		}
+		if err = s.send("EVALSHA", s.incrScriptSHA, "1", key, ttlStr); err != nil {
+			return
+		}
+		resp, err = s.recv()
+		if err != nil {
+			return
+		}
 	}
 	arr, ok := resp.([]interface{})
 	if !ok || len(arr) < 2 {
-		err = fmt.Errorf("redis: unexpected EVAL result %v", resp)
+		err = fmt.Errorf("redis: unexpected EVALSHA result %v", resp)
 		return
 	}
 	count, ok = arr[0].(int64)
@@ -253,4 +292,8 @@ func isNetworkError(err error) bool {
 	}
 	var netErr net.Error
 	return errors.As(err, &netErr)
+}
+
+func isNoScriptError(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "NOSCRIPT")
 }

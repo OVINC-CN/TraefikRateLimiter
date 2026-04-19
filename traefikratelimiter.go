@@ -25,7 +25,7 @@ const HeaderLimit = "X-RateLimit-Limit"
 const HeaderReset = "X-RateLimit-Reset"
 
 // HeaderKey exposes the internal rate-limit key used for this request,
-// formatted as "{ruleID}|{ip}|{realPath}". Useful for debugging and access log correlation.
+// formatted as "{ruleID}|{ip}|{rulePath}". Useful for debugging and access log correlation.
 const HeaderKey = "X-RateLimit-Key"
 
 // RateLimiter is the Traefik middleware implementation.
@@ -159,9 +159,10 @@ func (rl *RateLimiter) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 		periodSec = 1
 	}
 	window := now.Unix() / periodSec
-	key := fmt.Sprintf("%s|%s|%s|%d", rule.id(), ip, req.URL.Path, window)
+	rulePath := normalizeRulePath(req.URL.Path)
+	key := fmt.Sprintf("%s|%s|%s|%d", rule.id(), ip, rulePath, window)
 	// keyLabel is the human-readable portion of the key (without the window index).
-	keyLabel := fmt.Sprintf("%s|%s|%s", rule.id(), ip, req.URL.Path)
+	keyLabel := fmt.Sprintf("%s|%s|%s", rule.id(), ip, rulePath)
 
 	count, expireAt, err := rl.store.Incr(key, rule.period, now)
 	if err != nil {

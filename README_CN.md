@@ -131,6 +131,7 @@ http:
 - 只要配置了 `redis` 对象即启用 Redis 后端；`redis.addr` 为空时默认 `127.0.0.1:6379`。
 - Redis 任意错误都会让当前请求返回 `500`。
 - Redis 网络错误时，客户端仍会为后续请求尝试自动重连。
+- Redis 计数脚本使用 `EVALSHA`；遇到 `NOSCRIPT` 会自动重新加载脚本并重试一次。
 - 建议通过 `redis.keyPrefix` 隔离不同环境或业务的计数 key。
 
 ## 限流维度
@@ -138,10 +139,16 @@ http:
 内部计数器 key 格式：
 
 ```
-{ruleID} | {ip} | {realPath} | {windowIndex}
+{ruleID} | {ip} | {rulePath} | {windowIndex}
 ```
 
-对于 `/api/` 前缀规则，`/api/a` 和 `/api/b` 拥有**独立计数器**，符合 URL 级别限流预期。
+`rulePath` 会自动归一化以降低 key 基数，例如：
+
+- `/orders/123` 和 `/orders/456` → `/orders/:int`
+- `/trace/550e8400-e29b-41d4-a716-446655440000` → `/trace/:uuid`
+- `/token/<64位hex>` → `/token/:hex64`
+
+对于静态路径 `/api/a` 和 `/api/b`，依然保持**独立计数器**。
 
 ## 响应头
 
@@ -150,7 +157,7 @@ http:
 | Header | 示例 | 说明 |
 |---|---|---|
 | `X-RateLimit-Limit` | `60` | 当前窗口允许的最大请求数 |
-| `X-RateLimit-Key` | `login\|10.0.0.1\|/api/v1/login` | 限流维度标识 |
+| `X-RateLimit-Key` | `default\|10.0.0.1\|/orders/:int` | 限流维度标识 |
 | `X-RateLimit-Used` | `1/1h` | 当前窗口已用请求数 / 周期 |
 | `X-RateLimit-Remaining` | `59/1h` | 剩余请求数 / 周期 |
 | `X-RateLimit-RetryAfter` | `0s` | 距窗口重置剩余秒数（带 `s` 单位） |
