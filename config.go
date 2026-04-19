@@ -42,7 +42,8 @@ type LimitConfig struct {
 
 // RuleConfig describes a single per-path rule.
 type RuleConfig struct {
-	LimitConfig `yaml:",inline" toml:",inline"`
+	Requests int64  `json:"requests,omitempty"  yaml:"requests,omitempty"  toml:"requests,omitempty"`
+	Period   string `json:"period,omitempty"    yaml:"period,omitempty"    toml:"period,omitempty"`
 	// Name is optional and is included in the internal counter key for
 	// readability; defaults to "r{index}".
 	Name      string   `json:"name,omitempty"      yaml:"name,omitempty"      toml:"name,omitempty"`
