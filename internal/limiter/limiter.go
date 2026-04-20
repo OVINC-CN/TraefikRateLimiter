@@ -81,7 +81,7 @@ func (rl *RateLimiter) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 
 	// check if over limit
 	if count > rule.Requests {
-		rw.Header().Set("Retry-After", strconv.FormatInt(retryAfter, 10))
+		rw.Header().Set(constant.HeaderRetryAfter, strconv.FormatInt(retryAfter, 10))
 		rw.Header().Set("Content-Type", "application/json; charset=utf-8")
 		rw.WriteHeader(http.StatusTooManyRequests)
 		body := fmt.Sprintf(`{"error_code":"RATE_LIMITED","error_msg":"请求过于频繁，请 %d 秒后重试"}`, retryAfter)
