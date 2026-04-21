@@ -50,6 +50,12 @@ func normalizeDynamicSegment(seg string) (string, bool) {
 	if n == 0 {
 		return "", false
 	}
+	if isDigitsSegment(seg) {
+		if n >= 16 {
+			return rulePathU64ID, true
+		}
+		return rulePathInt, true
+	}
 	if n == 36 && isUUIDSegment(seg) {
 		return rulePathUUID, true
 	}
@@ -58,14 +64,6 @@ func normalizeDynamicSegment(seg string) (string, bool) {
 	}
 	if n == 64 && isHexSegment(seg) {
 		return rulePathHex64, true
-	}
-	if isDigitsSegment(seg) {
-		if n >= 16 && n <= 20 {
-			return rulePathU64ID, true
-		}
-		if n <= 15 {
-			return rulePathInt, true
-		}
 	}
 	return "", false
 }
