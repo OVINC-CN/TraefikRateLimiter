@@ -7,6 +7,7 @@ const (
 	rulePathU64ID = ":u64id"
 	rulePathHex64 = ":hex64"
 	rulePathUUID  = ":uuid"
+	rulePathHex32 = ":hex32"
 )
 
 func ParsePath(path string) string {
@@ -51,6 +52,9 @@ func normalizeDynamicSegment(seg string) (string, bool) {
 	}
 	if n == 36 && isUUIDSegment(seg) {
 		return rulePathUUID, true
+	}
+	if n == 32 && isHexSegment(seg) {
+		return rulePathHex32, true
 	}
 	if n == 64 && isHexSegment(seg) {
 		return rulePathHex64, true
