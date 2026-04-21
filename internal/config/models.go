@@ -110,10 +110,11 @@ type RedisConfig struct {
 }
 
 type Config struct {
-	AddHeaders   bool              `json:"addHeaders,omitempty" yaml:"addHeaders,omitempty" toml:"addHeaders,omitempty"`
-	Redis        *RedisConfig      `json:"redis,omitempty" yaml:"redis,omitempty" toml:"redis,omitempty"`
-	IPStrategy   *IPStrategyConfig `json:"ipStrategy,omitempty" yaml:"ipStrategy,omitempty" toml:"ipStrategy,omitempty"`
-	Default      *LimitConfig      `json:"default,omitempty"    yaml:"default,omitempty"    toml:"default,omitempty"`
-	DefaultInner *RuleConfig       `json:"-" yaml:"-" toml:"-"`
-	Rules        []*RuleConfig     `json:"rules,omitempty"      yaml:"rules,omitempty"      toml:"rules,omitempty"`
+	AddHeaders      bool              `json:"addHeaders,omitempty" yaml:"addHeaders,omitempty" toml:"addHeaders,omitempty"`
+	AddDebugHeaders bool              `json:"addDebugHeaders,omitempty" yaml:"addDebugHeaders,omitempty" toml:"addDebugHeaders,omitempty"`
+	Redis           *RedisConfig      `json:"redis,omitempty" yaml:"redis,omitempty" toml:"redis,omitempty"`
+	IPStrategy      *IPStrategyConfig `json:"ipStrategy,omitempty" yaml:"ipStrategy,omitempty" toml:"ipStrategy,omitempty"`
+	Default         *LimitConfig      `json:"default,omitempty"    yaml:"default,omitempty"    toml:"default,omitempty"`
+	DefaultInner    *RuleConfig       `json:"-" yaml:"-" toml:"-"`
+	Rules           []*RuleConfig     `json:"rules,omitempty"      yaml:"rules,omitempty"      toml:"rules,omitempty"`
 }

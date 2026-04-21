@@ -74,6 +74,9 @@ func (rl *RateLimiter) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 
 	// add headers
 	if rl.Cfg.AddHeaders {
+		rw.Header().Set(constant.HeaderKeySimple, keySimple)
+	}
+	if rl.Cfg.AddDebugHeaders {
 		rw.Header().Set(constant.HeaderUsed, strconv.FormatInt(count, 10))
 		rw.Header().Set(constant.HeaderRemaining, strconv.FormatInt(remaining, 10))
 		rw.Header().Set(constant.HeaderRetryAfter, strconv.FormatInt(retryAfter, 10))
@@ -81,7 +84,6 @@ func (rl *RateLimiter) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 		rw.Header().Set(constant.HeaderPeriod, strconv.FormatInt(int64(rule.PeriodInner.Seconds()), 10))
 		rw.Header().Set(constant.HeaderKey, key)
 	}
-	rw.Header().Set(constant.HeaderKeySimple, keySimple)
 
 	// check if over limit
 	if count > rule.Requests {
