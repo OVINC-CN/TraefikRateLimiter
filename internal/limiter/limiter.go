@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/OVINC-CN/TraefikRateLimiter/internal/config"
@@ -45,10 +46,12 @@ func (rl *RateLimiter) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 	window := now.Unix() / periodSec
 
 	// parse path
+	method := strings.ToUpper(req.Method)
 	rulePath := parser.ParsePath(req.URL.Path)
 
 	// build key
-	key := fmt.Sprintf("%s|%s|%s|%d", rule.Name, ip, rulePath, window)
+	key := fmt.Sprintf("%s|%s|%s#%s|%d", rule.Name, ip, method, rulePath, window)
+	keySimple := fmt.Sprintf("%s#%s", method, rulePath)
 
 	// do incr
 	count, expireAt, err := rl.Store.Incr(key, rule.PeriodInner, now)
@@ -78,6 +81,7 @@ func (rl *RateLimiter) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 		rw.Header().Set(constant.HeaderPeriod, strconv.FormatInt(int64(rule.PeriodInner.Seconds()), 10))
 		rw.Header().Set(constant.HeaderKey, key)
 	}
+	rw.Header().Set(constant.HeaderKeySimple, keySimple)
 
 	// check if over limit
 	if count > rule.Requests {

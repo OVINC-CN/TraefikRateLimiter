@@ -7,4 +7,5 @@ const (
 	HeaderTotal      = "X-RateLimit-Total"
 	HeaderPeriod     = "X-RateLimit-Period"
 	HeaderKey        = "X-RateLimit-Key"
+	HeaderKeySimple  = "X-RateLimit-Label"
 )
