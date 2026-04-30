@@ -33,9 +33,11 @@ TraefikRateLimiter 是一个 [Traefik](https://traefik.io/) 中间件插件，�
 | `rules[].name` | 是 | 规则标识，参与限流 key 组装 |
 | `rules[].path` | 是 | 匹配路径 |
 | `rules[].matchType` | 是 | `exact` 或 `prefix` |
+| `rules[].methods` | 否 | 可选 HTTP 方法列表；为空时匹配所有方法 |
 | `rules[].requests` | 是 | 必须 `> 0` |
 | `rules[].period` | 是 | Go Duration 字符串，且必须 `>= 1s` |
-| `addHeaders` | 否 | 默认 `false`，设为 `true` 才会写入限流响应头 |
+| `addHeaders` | 否 | 默认 `false`，设为 `true` 才会写入 `X-RateLimit-Label` 响应头 |
+| `addDebugHeaders` | 否 | 默认 `false`，设为 `true` 才会写入详细限流调试响应头 |
 
 > 时间字段由 `time.ParseDuration` 解析，建议使用 `1s`、`1m`、`1h`。
 
@@ -109,7 +111,7 @@ http:
 
 1. 按 `rules` 顺序匹配，命中第一条即生效。
 2. 未命中任何规则时，使用 `default`。
-3. 计数 key 形如：`{ruleName}|{ip}|{normalizedPath}|{windowIndex}`。
+3. 计数 key 形如：`{ruleName}{ip}{method}#{normalizedPath}{windowIndex}`。
 
 `normalizedPath` 会对动态段做归一化，降低 key 基数：
 
@@ -121,6 +123,12 @@ http:
 ## 响应头
 
 仅当 `addHeaders: true` 时写入以下头：
+
+| Header | 含义 |
+|---|---|
+| `X-RateLimit-Label` | 本次请求的 HTTP 方法与归一化路径（如 `GET#/orders/:int`） |
+
+仅当 `addDebugHeaders: true` 时写入以下头：
 
 | Header | 含义 |
 |---|---|
@@ -152,6 +160,7 @@ accessLog:
     headers:
       defaultMode: drop
       names:
+        X-RateLimit-Label: keep
         X-RateLimit-Key: keep
         X-RateLimit-Used: keep
         X-RateLimit-Remaining: keep

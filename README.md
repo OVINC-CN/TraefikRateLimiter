@@ -33,9 +33,11 @@ The current code path uses a **Redis counter backend** and can optionally emit `
 | `rules[].name` | Yes | Rule identifier, part of rate-limit key |
 | `rules[].path` | Yes | Match path |
 | `rules[].matchType` | Yes | `exact` or `prefix` |
+| `rules[].methods` | No | Optional HTTP method list; if empty, all methods match |
 | `rules[].requests` | Yes | Must be `> 0` |
 | `rules[].period` | Yes | Go duration string and must be `>= 1s` |
-| `addHeaders` | No | Default is `false`; set `true` to write rate-limit headers |
+| `addHeaders` | No | Default is `false`; set `true` to write `X-RateLimit-Label` header |
+| `addDebugHeaders` | No | Default is `false`; set `true` to write detailed rate-limit debug headers |
 
 > Duration fields are parsed by `time.ParseDuration`. Use values like `1s`, `1m`, `1h`.
 
@@ -109,7 +111,7 @@ http:
 
 1. Rules are matched in order; the first matched rule is used.
 2. If no rule matches, `default` is used.
-3. Counter key format: `{ruleName}|{ip}|{normalizedPath}|{windowIndex}`.
+3. Counter key format: `{ruleName}{ip}{method}#{normalizedPath}{windowIndex}`.
 
 `normalizedPath` reduces key cardinality by normalizing dynamic segments:
 
@@ -120,7 +122,13 @@ http:
 
 ## Response Headers
 
-Headers below are written only when `addHeaders: true`:
+Header written when `addHeaders: true`:
+
+| Header | Meaning |
+|---|---|
+| `X-RateLimit-Label` | HTTP method and normalized path for this request (e.g. `GET#/orders/:int`) |
+
+Headers written when `addDebugHeaders: true`:
 
 | Header | Meaning |
 |---|---|
@@ -129,7 +137,7 @@ Headers below are written only when `addHeaders: true`:
 | `X-RateLimit-RetryAfter` | Seconds until reset (integer) |
 | `X-RateLimit-Total` | Window quota for current rule (integer) |
 | `X-RateLimit-Period` | Rule period in seconds (integer) |
-| `X-RateLimit-Key` | Full key used for this request |
+| `X-RateLimit-Key` | Full counter key used for this request |
 
 When limited, response is `429` with:
 
@@ -152,6 +160,7 @@ accessLog:
     headers:
       defaultMode: drop
       names:
+        X-RateLimit-Label: keep
         X-RateLimit-Key: keep
         X-RateLimit-Used: keep
         X-RateLimit-Remaining: keep
