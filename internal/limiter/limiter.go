@@ -22,6 +22,7 @@ type RateLimiter struct {
 
 func (rl *RateLimiter) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 	// loop rules
+	passed := false
 	for _, r := range rl.Cfg.Rules {
 		if r.Matches(req) {
 			rule := &(*r)
@@ -29,7 +30,13 @@ func (rl *RateLimiter) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 				// skip if not success
 				return
 			}
+			passed = true
 		}
+	}
+	// skip if rule checked at least one and all passed
+	if passed {
+		rl.Next.ServeHTTP(rw, req)
+		return
 	}
 	// check default rule
 	rule := &(*rl.Cfg.DefaultInner)
