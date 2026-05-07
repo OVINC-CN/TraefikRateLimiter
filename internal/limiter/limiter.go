@@ -21,13 +21,27 @@ type RateLimiter struct {
 }
 
 func (rl *RateLimiter) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
-	// find matching rule
-	rule := rl.matchRule(req)
-	if rule == nil {
-		rl.Next.ServeHTTP(rw, req)
+	// loop rules
+	for _, r := range rl.Cfg.Rules {
+		if r.Matches(req) {
+			rule := &(*r)
+			if !rl.checkRule(rule, rw, req) {
+				// skip if not success
+				return
+			}
+		}
+	}
+	// check default rule
+	rule := &(*rl.Cfg.DefaultInner)
+	if !rl.checkRule(rule, rw, req) {
+		// skip if not success
 		return
 	}
+	// pass to next
+	rl.Next.ServeHTTP(rw, req)
+}
 
+func (rl *RateLimiter) checkRule(rule *config.RuleConfig, rw http.ResponseWriter, req *http.Request) bool {
 	// copy to avoid concurrent map read/write if rule is modified
 	rule = &(*rule)
 
@@ -59,7 +73,7 @@ func (rl *RateLimiter) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 		rw.Header().Set("Content-Type", "application/json; charset=utf-8")
 		rw.WriteHeader(http.StatusInternalServerError)
 		_, _ = rw.Write([]byte(`{"error_code":"RATE_LIMIT_STORE_ERROR","error_msg":"限流异常，请稍后重试"}`))
-		return
+		return false
 	}
 
 	// parse remaining and retry after
@@ -92,17 +106,8 @@ func (rl *RateLimiter) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 		rw.WriteHeader(http.StatusTooManyRequests)
 		body := fmt.Sprintf(`{"error_code":"RATE_LIMITED","error_msg":"请求过于频繁，请 %d 秒后重试"}`, retryAfter)
 		_, _ = rw.Write([]byte(body))
-		return
+		return false
 	}
 
-	rl.Next.ServeHTTP(rw, req)
-}
-
-func (rl *RateLimiter) matchRule(req *http.Request) *config.RuleConfig {
-	for _, r := range rl.Cfg.Rules {
-		if r.Matches(req) {
-			return r
-		}
-	}
-	return rl.Cfg.DefaultInner
+	return true
 }
