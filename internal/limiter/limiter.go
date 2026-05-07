@@ -42,9 +42,6 @@ func (rl *RateLimiter) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 }
 
 func (rl *RateLimiter) checkRule(rule *config.RuleConfig, rw http.ResponseWriter, req *http.Request) bool {
-	// copy to avoid concurrent map read/write if rule is modified
-	rule = &(*rule)
-
 	// extract client IP
 	ip := rl.Cfg.IPStrategy.ExtractIP(req)
 	if ip == "" {
