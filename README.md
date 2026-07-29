@@ -2,7 +2,7 @@
 
 # TraefikRateLimiter
 
-**URL-level fixed-window rate limiting middleware for Traefik (current implementation uses Redis).**
+**URL-level fixed-window rate limiting middleware for Traefik with memory and Redis backends.**
 
 [![Go Version](https://img.shields.io/badge/go-1.24+-00ADD8?logo=go)](https://golang.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
@@ -16,16 +16,17 @@
 ## Overview
 
 TraefikRateLimiter is a [Traefik](https://traefik.io/) middleware plugin that enforces URL-level fixed-window rate limits by path and client IP.
-The current code path uses a **Redis counter backend** and can optionally emit `X-RateLimit-*` headers for access log integration.
+It stores counters in process memory by default, can explicitly use a **Redis counter backend**, and can optionally emit `X-RateLimit-*` headers for access log integration.
 
-## Current Configuration Constraints (Code-Accurate)
+## Configuration Constraints (Code-Accurate)
 
 | Field | Required | Notes |
 |---|---|---|
 | `ipStrategy` | Yes | Object is required; if `header` is empty, defaults to `X-Forwarded-For` |
-| `redis` | Yes | Object is required; middleware init fails when missing |
-| `redis.addr` | Yes | Redis address, e.g. `127.0.0.1:6379` |
-| `redis.timeout` | Yes | Go duration string, e.g. `1s` |
+| `store` | No | `memory` or `redis`, case-insensitive; defaults to `memory` |
+| `redis` | Conditional | Required only when `store: redis`; ignored in memory mode |
+| `redis.addr` | Conditional | Redis address, e.g. `127.0.0.1:6379` |
+| `redis.timeout` | Conditional | Go duration string, e.g. `1s` |
 | `default` | Yes | Fallback rate limit for unmatched requests |
 | `default.requests` | Yes | Must be `> 0` |
 | `default.period` | Yes | Go duration string and must be `>= 1s` |
@@ -40,6 +41,9 @@ The current code path uses a **Redis counter backend** and can optionally emit `
 | `addDebugHeaders` | No | Default is `false`; set `true` to write detailed rate-limit debug headers |
 
 > Duration fields are parsed by `time.ParseDuration`. Use values like `1s`, `1m`, `1h`.
+
+> [!IMPORTANT]
+> After upgrading, an omitted `store` always selects memory. Existing configurations that contain a `redis` object must add `store: redis` to keep using Redis.
 
 ## Installation
 
@@ -70,7 +74,9 @@ experimental:
       version: v0.1.0
 ```
 
-## Dynamic Configuration Example
+## Dynamic Configuration Examples
+
+### Memory Mode (Default)
 
 ```yaml
 http:
@@ -78,18 +84,13 @@ http:
     my-ratelimit:
       plugin:
         traefikratelimiter:
+          store: memory
           addHeaders: true
           ipStrategy:
             header: "X-Forwarded-For"
             depth: 0
             trustedHeaders:
               - "X-Real-IP"
-          redis:
-            addr: "127.0.0.1:6379"
-            password: ""
-            db: 0
-            keyPrefix: "rl:"
-            timeout: "1s"
           default:
             requests: 100
             period: "1m"
@@ -106,6 +107,37 @@ http:
               requests: 60
               period: "10s"
 ```
+
+The `store` field can be omitted; memory is used when it is not configured.
+
+### Redis Mode
+
+```yaml
+http:
+  middlewares:
+    my-ratelimit:
+      plugin:
+        traefikratelimiter:
+          store: redis
+          redis:
+            addr: "127.0.0.1:6379"
+            password: ""
+            db: 0
+            keyPrefix: "rl:"
+            timeout: "1s"
+          ipStrategy:
+            header: "X-Forwarded-For"
+          default:
+            requests: 100
+            period: "1m"
+```
+
+If Redis initialization or connection fails, middleware initialization fails without falling back to memory.
+
+## Storage Backends
+
+- `memory`: Counters exist only in the current middleware instance in the current Traefik process. They are lost on process restart or configuration reload and are not shared across instances.
+- `redis`: Use this backend when counters must be shared across Traefik instances.
 
 ## Rate-Limit Behavior
 
@@ -144,7 +176,7 @@ When limited, response is `429` with:
 - `Retry-After: <seconds>`
 - JSON body: `{"error_code":"RATE_LIMITED","error_msg":"请求过于频繁，请 X 秒后重试"}`
 
-When Redis/store fails, response is `500`:
+When the store fails, response is `500`:
 
 ```json
 {"error_code":"RATE_LIMIT_STORE_ERROR","error_msg":"限流异常，请稍后重试"}

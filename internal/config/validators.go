@@ -21,8 +21,8 @@ func (c *Config) Validate() error {
 	if err := c.validateIPStrategy(); err != nil {
 		return err
 	}
-	// validate redis config
-	if err := c.validateRedis(); err != nil {
+	// validate store config
+	if err := c.validateStore(); err != nil {
 		return err
 	}
 	return nil
@@ -107,6 +107,22 @@ func (c *Config) validateIPStrategy() error {
 		c.IPStrategy.Header = "X-Forwarded-For"
 	}
 	return nil
+}
+
+func (c *Config) validateStore() error {
+	c.Store = strings.ToLower(strings.TrimSpace(c.Store))
+	if c.Store == "" {
+		c.Store = constant.StoreMemory
+	}
+
+	switch c.Store {
+	case constant.StoreMemory:
+		return nil
+	case constant.StoreRedis:
+		return c.validateRedis()
+	default:
+		return fmt.Errorf("store: invalid value %q", c.Store)
+	}
 }
 
 func (c *Config) validateRedis() error {

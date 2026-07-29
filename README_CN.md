@@ -2,7 +2,7 @@
 
 # TraefikRateLimiter
 
-**Traefik URL 级别固定窗口限流中间件（当前实现使用 Redis）。**
+**支持内存与 Redis 后端的 Traefik URL 级别固定窗口限流中间件。**
 
 [![Go Version](https://img.shields.io/badge/go-1.24+-00ADD8?logo=go)](https://golang.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
@@ -16,16 +16,17 @@
 ## 简介
 
 TraefikRateLimiter 是一个 [Traefik](https://traefik.io/) 中间件插件，按 URL 路径 + 客户端 IP 执行固定窗口限流。
-当前代码路径使用 **Redis 计数后端**，并可按需输出 `X-RateLimit-*` 响应头，便于接入 access log。
+默认使用进程内存保存计数，也可显式选择 **Redis 计数后端**，并可按需输出 `X-RateLimit-*` 响应头，便于接入 access log。
 
-## 当前配置约束（与代码一致）
+## 配置约束（与代码一致）
 
 | 字段 | 必填 | 说明 |
 |---|---|---|
 | `ipStrategy` | 是 | 必须提供对象；`header` 为空时默认 `X-Forwarded-For` |
-| `redis` | 是 | 必须提供对象；缺失会导致中间件初始化失败 |
-| `redis.addr` | 是 | Redis 地址，例如 `127.0.0.1:6379` |
-| `redis.timeout` | 是 | Go Duration 字符串，例如 `1s` |
+| `store` | 否 | `memory` 或 `redis`，不区分大小写；默认 `memory` |
+| `redis` | 条件必填 | 仅 `store: redis` 时必须提供；内存模式下忽略 |
+| `redis.addr` | 条件必填 | Redis 地址，例如 `127.0.0.1:6379` |
+| `redis.timeout` | 条件必填 | Go Duration 字符串，例如 `1s` |
 | `default` | 是 | 未命中规则时的兜底限流 |
 | `default.requests` | 是 | 必须 `> 0` |
 | `default.period` | 是 | Go Duration 字符串，且必须 `>= 1s` |
@@ -40,6 +41,9 @@ TraefikRateLimiter 是一个 [Traefik](https://traefik.io/) 中间件插件，�
 | `addDebugHeaders` | 否 | 默认 `false`，设为 `true` 才会写入详细限流调试响应头 |
 
 > 时间字段由 `time.ParseDuration` 解析，建议使用 `1s`、`1m`、`1h`。
+
+> [!IMPORTANT]
+> 升级后，未配置 `store` 时固定使用内存。旧配置即使保留了 `redis` 对象，也必须增加 `store: redis` 才会继续使用 Redis。
 
 ## 安装
 
@@ -72,24 +76,21 @@ experimental:
 
 ## 动态配置示例
 
+### 内存模式（默认）
+
 ```yaml
 http:
   middlewares:
     my-ratelimit:
       plugin:
         traefikratelimiter:
+          store: memory
           addHeaders: true
           ipStrategy:
             header: "X-Forwarded-For"
             depth: 0
             trustedHeaders:
               - "X-Real-IP"
-          redis:
-            addr: "127.0.0.1:6379"
-            password: ""
-            db: 0
-            keyPrefix: "rl:"
-            timeout: "1s"
           default:
             requests: 100
             period: "1m"
@@ -106,6 +107,37 @@ http:
               requests: 60
               period: "10s"
 ```
+
+`store` 可以省略；未配置时同样使用内存。
+
+### Redis 模式
+
+```yaml
+http:
+  middlewares:
+    my-ratelimit:
+      plugin:
+        traefikratelimiter:
+          store: redis
+          redis:
+            addr: "127.0.0.1:6379"
+            password: ""
+            db: 0
+            keyPrefix: "rl:"
+            timeout: "1s"
+          ipStrategy:
+            header: "X-Forwarded-For"
+          default:
+            requests: 100
+            period: "1m"
+```
+
+Redis 初始化或连接失败时，中间件初始化失败，不会自动回退到内存。
+
+## 存储后端
+
+- `memory`：计数仅存在于当前 Traefik 进程的当前中间件实例中。进程重启、配置重载后数据会丢失，多实例之间也不会共享计数。
+- `redis`：适用于需要跨 Traefik 实例共享计数的部署。
 
 ## 限流行为
 
@@ -144,7 +176,7 @@ http:
 - `Retry-After: <seconds>`
 - JSON body: `{"error_code":"RATE_LIMITED","error_msg":"请求过于频繁，请 X 秒后重试"}`
 
-Redis/存储异常时返回 `500`：
+存储异常时返回 `500`：
 
 ```json
 {"error_code":"RATE_LIMIT_STORE_ERROR","error_msg":"限流异常，请稍后重试"}

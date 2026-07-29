@@ -6,12 +6,13 @@ import (
 	"net/http"
 
 	"github.com/OVINC-CN/TraefikRateLimiter/internal/config"
+	"github.com/OVINC-CN/TraefikRateLimiter/internal/constant"
 	"github.com/OVINC-CN/TraefikRateLimiter/internal/limiter"
 	"github.com/OVINC-CN/TraefikRateLimiter/internal/store"
 )
 
 func CreateConfig() *config.Config {
-	return &config.Config{}
+	return &config.Config{Store: constant.StoreMemory}
 }
 
 func New(ctx context.Context, next http.Handler, cfg *config.Config, name string) (http.Handler, error) {
@@ -22,15 +23,26 @@ func New(ctx context.Context, next http.Handler, cfg *config.Config, name string
 	if err := cfg.Validate(); err != nil {
 		return nil, err
 	}
-	// init redis store
-	rs, err := store.NewRedisStore(cfg.Redis)
-	if err != nil {
-		return nil, fmt.Errorf("redis store: %w", err)
+
+	// init store
+	var backend store.Store
+	switch cfg.Store {
+	case constant.StoreMemory:
+		backend = store.NewMemoryStore()
+	case constant.StoreRedis:
+		rs, err := store.NewRedisStore(cfg.Redis)
+		if err != nil {
+			return nil, fmt.Errorf("redis store: %w", err)
+		}
+		backend = rs
+	default:
+		return nil, fmt.Errorf("unsupported store %q", cfg.Store)
 	}
+
 	go func() {
 		<-ctx.Done()
-		rs.Close()
+		backend.Close()
 	}()
 	// instance
-	return &limiter.RateLimiter{Name: name, Next: next, Cfg: cfg, Store: rs}, nil
+	return &limiter.RateLimiter{Name: name, Next: next, Cfg: cfg, Store: backend}, nil
 }
