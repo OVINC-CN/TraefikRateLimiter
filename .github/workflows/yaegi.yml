@@ -1,0 +1,39 @@
+name: Yaegi
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+env:
+  YAEGI_VERSION: v0.16.1
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    env:
+      GOPATH: ${{ github.workspace }}/go
+    defaults:
+      run:
+        working-directory: ${{ github.workspace }}/go/src/github.com/${{ github.repository }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          path: go/src/github.com/${{ github.repository }}
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go/src/github.com/${{ github.repository }}/go.mod
+          cache: false
+
+      - name: Install Yaegi
+        run: go install github.com/traefik/yaegi/cmd/yaegi@${YAEGI_VERSION}
+
+      - name: Test plugin with Yaegi
+        run: '"$(go env GOPATH)/bin/yaegi" test -v .'
